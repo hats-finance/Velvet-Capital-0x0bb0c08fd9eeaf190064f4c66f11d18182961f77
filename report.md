@@ -34,15 +34,13 @@ No scope available.
 ## High severity issues
 
 
-- **Exploit to Drain Tokens via Improper Validation in DepositBatch Function**
+- **DepositBatch Function Allows Draining of Approvers' Token Balances with Malicious Calldata**
 
-  A vulnerability has been identified in the DepositBatch, WithdrawBatch, and EnsoHandlers contracts which enables attackers to drain these contracts' approvers' token balances due to improper input validation in the DepositBatch.multiTokenSwapAndTransfer() function. This issue arises from the integration with Enso's SafeEnsoShortcuts, which allows delegate calls to any input contracts. 
+  There's a vulnerability in the DepositBatch, WithdrawBatch, and EnsoHandler contracts, which allows for the draining of tokens due to improper input validation. Specifically, the DepositBatch.multiTokenSwapAndTransfer() function can be exploited through delegate calls via Enso's SafeEnsoShortcuts integration. This exploit enables an attacker to call any command, including the transferFrom function of the USDT contract, using malicious calldata.
 
-The exploit works as follows: a user approves the DepositBatch contract to spend their USDT tokens and an attacker then calls the multiTokenSwapAndTransfer() function with malicious calldata. This calldata exploits the delegate call to SafeEnsoShortcuts, allowing the attacker to transfer USDT tokens from the user's balance to the attacker's wallet.
+In a typical attack scenario, a user (User A) approves the DepositBatch contract to spend their USDT tokens. The attacker then invokes the vulnerable function with maliciously crafted calldata, causing User A's USDT balance to be transferred to the attacker's wallet. The exploitation is facilitated by the fact that the contracts making the delegate calls are considered as the callers, thereby bypassing approval checks.
 
-To address the issue, it is recommended to add a whitelisting mechanism for the target contracts and function selectors. One user fabricated the calldata manually for the Proof of Concept (PoC) and suggested generating it based on test environment addresses for clarity. Consequently, a revised PoC was provided, showing successful token draining in the test environment.
-
-The vulnerability was acknowledged, leading to updates in the code to resolve the issue. The changes have been committed and can be reviewed in the specified repository link.
+A proof of concept (PoC) demonstrating the exploit was provided. The recommended mitigation involves implementing a whitelisting mechanism for target contracts and function selectors. Further collaboration between the reporting user and the maintainers led to a refined PoC and eventual resolution of the issue. The changes have been committed and can be reviewed in the provided commit link.
 
 
   **Link**: [Issue #78](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/78)
@@ -50,37 +48,33 @@ The vulnerability was acknowledged, leading to updates in the code to resolve th
 ## Medium severity issues
 
 
-- **Unprotected ERC20 Permit Functionality Can Lead to Transaction Reversion**
+- **Unprotected ERC20 permit in VaultManager.sol allows front-running DoS attacks on deposits**
 
-  The `VaultManager.sol` contract includes functions that allow users to grant ERC20 permits to others for depositing and transferring tokens. The permit functionality is vulnerable to front-running attacks that can lead to denial of service (DoS) during deposits. While the `permit` function confirms the signature matches the owner, it doesn't verify who executes the permit. An attacker can exploit this by front-running a transaction and using the permit signature, causing the initial transaction to fail when it attempts to use the already consumed permit.
-
-In a practical scenario, Alice grants Bob permissions to deposit tokens via multiple batched permits. When Bob tries to execute these permits, an attacker could intercept the signature details from the mempool and use the permit before Bob, resulting in Bob's transaction failing and wasting gas.
-
-A recommended fix is to wrap every `permit` call in a try/catch block, ensuring the call-chain doesn't revert but continues using the granted allowance accordingly. Further detailed advice and an example can be found in the linked article.
+  The `VaultManager.sol` contract has an unprotected ERC20 permit functionality, which can be exploited for Denial-of-Service (DoS) attacks through front-running. When users grant permits for token transfers, anyone can execute the permit if they catch the transaction details in the mempool. This can lead to the front-runner consuming the permit before the intended transaction completes, causing the original transaction to fail due to invalidated signatures. The risk is exacerbated when multiple permits are batched, as a front-runner can target the last permit in the batch, forcing unnecessary gas expenditure on failed transactions. A recommended solution is wrapping permit calls in a try/catch block to prevent the entire call chain from reverting in case of a reused signature.
 
 
   **Link**: [Issue #5](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/5)
 
 
-- **Cannot Reset Watermark to Zero on First Deposit as Intended**
+- **HighWaterMark reset to 0 on first deposit does not function as intended**
 
-  During the first deposit, the protocol intends to reset the watermark to 0. However, current logic prevents this if the watermark is already greater than 0. The `_updateHighWaterMark` function only updates the watermark if the new value is greater than the current one. This oversight means the watermark cannot be reset to 0 as intended. The protocol should be modified to ensure that the high watermark is set to 0 during the first deposit. The proposed revision involves modifying the function to directly set the `highWatermark` to the current price, regardless of its value. The changes have been implemented and pushed to the repository.
+  During the first deposit, the watermark should be set to 0, but this can never happen if the watermark is already greater than 0. This is due to the current `_updateHighWaterMark` function, which only updates the watermark if the new price is higher than the existing high water mark. To align with the protocol's intent, the function should be modified to set the highWatermark to the current price regardless of its value. Specifically, updating the function logic to always change the highWatermark to the new price will fix this issue. The required adjustments have been made and the changes can be reviewed at the provided link.
 
 
   **Link**: [Issue #45](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/45)
 
 
-- **Potential Inaccurate Fee Accrual and Minting Due to Parameter Adjustments by Admin**
+- **Admin Fee Parameter Changes Can Cause Incorrect Minting of Accrued Fees**
 
-  Portfolios are linked to a fee module that charges and mints fees based on configurations and token supply. These parameters, which can be updated by the ProtocolOwner, determine the fee amount. Changes to parameters without minting previously accrued fees may result in incorrect fees being minted over time. The `_chargeFees()` function triggers fee calculation and minting upon deposits and withdrawals. However, if no activity occurs, fees accrue until the next deposit or withdrawal. If admin changes basis points before minting these accrued fees, the protocol may charge inaccurately. To rectify, the recommendation is to invoke `feeModule._chargeProtocolAndManagementFees()` before updating fee parameters. The issue has been resolved with the updates available in the given commit link.
+  Each portfolio is connected with a fee module that charges and mints protocol and management fees based on token supply and configurations, which can be altered by the ProtocolOwner. This leads to a situation where changing crucial fee parameters without accounting for previously accrued fees can result in the protocol minting incorrect fee amounts. The `VaultManager` triggers the `_chargeFees()` function during deposits and withdrawals, which calculates fees based on total supply and time intervals. However, if no transactions occur for a while, accrued fees might not be minted correctly. Adjusting fee parameters without minting these accrued fees could lead to inaccuracies in fee collection. The suggested solution involves calling `feeModule._chargeProtocolAndManagementFees()` before updating fee parameters.
 
 
   **Link**: [Issue #47](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/47)
 
 
-- **Rebalancing Contract's Strict Dust Check Causes DoS Vulnerability in updateWeights Function**
+- **Failed Rebalancing Due to Dust Tokens Can Cause Permanent Denial of Service**
 
-  The `updateWeights` function in the Rebalancing contract updates asset weights by pulling funds from the vault to a swap handler. However, the process of verifying token balances is overly strict because it requires swapping exact token amounts, leaving no room for small leftover amounts (dust), which can cause the operation to revert unexpectedly. Additionally, if a swap handler is pre-funded with a small token amount, the swap might not use all tokens, resulting in leftover tokens and causing repeated denial of service (DOS) when updating weights. The suggested fix includes adjusting how funds are handled and transferred, ensuring any leftover tokens in the `EnsoHandler` are moved back to the vault to prevent DOS attacks.
+  The `updateWeights` function in the Rebalancing contract, used by the asset manager to update asset weights, is found to have a critical flaw. The process involves pulling funds from the vault to the swap handler, performing a swap using the EnsoHandler contract, checking for leftover tokens in the handler, and verifying vault token balances. The strict verification process in step 3 often fails because some leftover (dust) tokens remain post-swap. Additionally, if the swap handler is pre-funded with a small token amount, it leads to an accumulation of excess tokens, causing the operation to revert. This creates a potential Denial of Service (DoS) scenario, making the protocol vulnerable to being permanently blocked from updating weights, which could render the protocol insolvent. The proposed fix suggests transferring any leftover tokens from the EnsoHandler back to the vault instead.
 
 
   **Link**: [Issue #61](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/61)
@@ -88,57 +82,57 @@ A recommended fix is to wrap every `permit` call in a try/catch block, ensuring 
 ## Low severity issues
 
 
-- **USDT Approval Issue in multiTokenSwapAndTransfer Function for Mainnet Deployment**
+- **USDT Approval in multiTokenSwapAndTransfer Fails on Ethereum Mainnet**
 
-  The `multiTokenSwapAndTransfer` function in `DepositBatch` has an issue with the plain `Approve` ERC20 function when dealing with USDT on Mainnet. USDT's `approve()` function fails if the current approval isn't set to zero. This issue isn't present on BSC and Arbitrum, but could affect multi-chain deployments. Setting the allowance to zero before re-approval is recommended for mitigation.
+  The `multiTokenSwapAndTransfer` function in `DepositBatch` has an issue with the plain `Approve` ERC20 function. Specifically, approvals for the USDT token on the Ethereum Mainnet will fail due to its requirement for allowances to be set to zero before modifying them. It's recommended to set the allowance to zero before setting it to a non-zero value or to use a safe increase allowance method. This issue is currently not affecting deployments on BSC and Arbitrum but may affect future multi-chain deployments.
 
 
   **Link**: [Issue #3](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/3)
 
 
-- **VaultManager Does Not Properly Enforce Minimum Mint Amount Before Fees**
+- **VaultManager Fails to Enforce Minimum Mint Amount Properly**
 
-  VaultManager's `_minMintAmount` enforcement is flawed. When users deposit, the minimum mint amount is checked before fees are applied, potentially resulting in users receiving fewer tokens than specified. This breaks a key invariant. A proof of concept was requested, and the issue has been resolved and updated in the code repository.
+  The VaultManager fails to properly enforce the `_minMintAmount` when users deposit funds. The minimum mint amount is checked before fees are applied, potentially allowing users to receive fewer tokens than specified. This breaches a core invariant of the system. A code adjustment has already been made to address this issue.
 
 
   **Link**: [Issue #31](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/31)
 
 
-- **TokenWhitelistManagement lacks remove operation, potential issues in init function**
+- **TokenWhitelistManagement lacks remove operation, needs validation or implementation**
 
-  In the `TokenWhitelistManagement` contract, there is a discrepancy where the add operation for token whitelisting is implemented during initialization, but the remove operation is absent. The existence of the `TokensRemovedFromWhitelist` event suggests a plan to include token removal. The recommended action is either to ensure the whitelisting is properly initialized when enabled or to implement the remove operation as intended.
+  The `TokenWhitelistManagement` module only supports adding tokens during initialization and lacks a function to remove tokens despite having an event for token removal. This discrepancy suggests either implementing token removal or ensuring a validation check when `_tokenWhitelistingEnabled` is true and `_whitelistTokens` is empty. The issue has been resolved in the latest commit.
 
 
   **Link**: [Issue #33](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/33)
 
 
-- **`claimRemovedTokens` Function Reverts on Single Transfer Failure, Causing Token Loss**
+- **Claim Function Reverts Entirely if Single Token Transfer Fails**
 
-  The `claimRemovedTokens` function allows users to claim their share of removed tokens. However, if any token transfer fails, the entire function reverts, preventing the user from claiming any tokens. This can lead to inefficiencies, denial of service, and potential financial loss if the user cannot reclaim valuable tokens.
+  The `claimRemovedTokens` function allows users to claim their share of tokens removed in previous snapshots. However, if any single transfer operation within the function fails, the entire process reverts, preventing users from claiming any tokens and potentially leading to financial losses and poor user experience.
 
 
   **Link**: [Issue #60](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/60)
 
 
-- **Issues with Rebasing Tokens in `removePortfolioToken` and Claim Function**
+- **Issues with Rebasing Tokens in TokenExclusionManager Affecting Claims and Balances**
 
-  Rebasing tokens, whose balances change over time, present challenges when removed from a portfolio. Upon removal, the recorded balance may differ from the balance during a claim. Tokens with increasing rebase can accumulate, while decreasing rebase affects last users who may fail to claim their due amount. Mitigation involves using current balances during claims.
+  The balance discrepancies of rebasing tokens when they are removed from a portfolio can cause complications. With increasing rebase tokens, an excess accumulates, while decreasing rebase tokens may leave insufficient funds, leading to failed user claims. Solutions include using current balances for claims and adding a function to transfer tokens from the exclusion manager.
 
 
   **Link**: [Issue #74](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/74)
 
 
-- **Potential Out-of-Gas Error When Passive Users Claim Removed Tokens After a Large Snapshot ID Gap**
+- **Edge Case in Claiming Removed Tokens May Cause Out of Gas Errors**
 
-  A potential out-of-gas issue arises in scenarios with a large gap between `lastClaimedUserId` and `_currentSnapshotId`. A 1 wei token transfer to a passive user can trigger `attemptClaim` repeatedly, leading to extensive looping and gas consumption. Suggested mitigation involves limiting iterations per transaction or enabling batch claims.
+  A potential large gap between `lastClaimedUserId` and `_currentSnapshotId` can cause an out-of-gas error when claiming removed tokens. This issue arises when the code executes repeated claim attempts due to the `hasInteractedWithId` flag being gamed by a small transfer, triggering extensive looping. Implementing transaction iteration limits or batching claims could mitigate this.
 
 
   **Link**: [Issue #75](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/75)
 
 
-- **Issues with Pausing Mechanism: Unrestricted Token Transfers and Removals**
+- **Protocol Does Not Restrict Token Transfers or Removals During Pause State**
 
-  During a protocol's pause state, deposits and withdrawals are restricted, but token transfers via `transfer()` and token removals in asset management are not. This oversight undermines the purpose of pausing mechanisms designed to mitigate exploit impact and security issues. Recommendations include adding checks to enforce pause restrictions in both transfer and token removal functions.
+  The protocol restricts deposits and withdrawals during its pause state but doesn't prevent token transfers via `transfer()` or token removal functions in the asset management contract. This oversight undermines the purpose of pausing mechanisms intended to mitigate security issues. Recommendations include adding pause checks before token transfers and token removal functions.
 
 
   **Link**: [Issue #102](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/102)
@@ -146,35 +140,33 @@ A recommended fix is to wrap every `permit` call in a try/catch block, ensuring 
 ## Minor severity issues
 
 
-- **Problem with Indexed Keyword in Solidity Events Causing Inaccurate Emissions**
+- **Dynamic Array Indexed in UpdatedTokens Event Returns Inaccurate Hashed Data**
 
-  When the `indexed` keyword is used for dynamic arrays or strings in events, it returns a hash instead of the actual variable data. This affects the Rebalancing contract's `UpdatedTokens` event, causing front-end applications to receive a 32-byte hash rather than the expected data. Modifying the event definition to remove `indexed` resolves this issue. 
-
-Similar problems exist in several other events, including `TokenWhitelisted`, `TokensRemovedFromWhitelist`, `UserWhitelisted`, `UserRemovedFromWhitelist`, `TokensEnabled`, and `TokensDisabled`. The resolved changes have been pushed to the repository.
+  When the `indexed` keyword is used for reference type variables like dynamic arrays or strings, it returns their hash instead of the actual data. This affects the Rebalancing contract's `UpdatedTokens` event, causing front-end applications to receive meaningless hashes rather than the expected parameters. Removing `indexed` resolves the issue.
 
 
   **Link**: [Issue #25](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/25)
 
 
-- **Potential Overinflation in Portfolio Share Minting with Specific Tokens**
+- **Potential Token Balance Transfer Issue with Edge-Case Portfolios and Malicious Managers**
 
-  Tokens with a special condition, like cUSDCv3, can cause accounting issues when transferring `amount == type(uint256).max`. This condition can be exploited by malicious managers. Deposits may overinflate portfolio shares due to discrepancies between specified amounts and actual transfers. To mitigate, disallow `type(uint256).max` as a valid deposit amount.
+  Tokens with a special condition to transfer the full balance when transferring `amount == type(uint256).max` can disrupt accounting or be exploited by malicious managers. This can cause an inflated minting of portfolio shares or enable zero-balance deposits, potentially breaking the portfolio. A recommended fix is to disallow using `type(uint256).max` as a deposit amount.
 
 
   **Link**: [Issue #66](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/66)
 
 
-- **Wrong Event Emitted for upgradeTokenExclusionManager Function in PortfolioFactory Contract**
+- **Wrong Event Emission in `upgradeTokenExclusionManager()` of `PortfolioFactory` Contract**
 
-  The `upgradeTokenExclusionManager()` function in the `PortfolioFactory` contract emits the wrong event, causing event-listening programs to mistakenly interpret a portfolio upgrade instead of an upgrade to the token exclusion manager. The suggested fix includes defining a specific event for upgrading the token exclusion manager and correcting the function's natspec description.
+  The `upgradeTokenExclusionManager()` function in the `PortfolioFactory` contract is emitting the wrong event, `UpgradePortfolio`, instead of an event specific to upgrading the token exclusion manager. This misleads event-listening programs into thinking a portfolio is being upgraded. The function's natspec description and corresponding event are also incorrectly aligned, mirroring the `upgradePortfolio()` function. A suggested fix includes defining and using a correct event for the token exclusion manager upgrade.
 
 
   **Link**: [Issue #77](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/77)
 
 
-- **Ownership Transfer Does Not Update Portfolio Information in getPortfolioList Function**
+- **Ownership Transfers Not Updating Owner Information in Portfolio List**
 
-  The `PortfolioInfolList` contains a list of `PortfoliolInfo` structs detailing various addresses including the owner. When ownership of a portfolio is transferred, the `PortfolioInfolList` is not updated accordingly. This results in outdated information being returned by `getPortfolioList`. The issue is resolved with an override of `transferOwnership` to update the list.
+  When a portfolio transfers ownership to another entity, the `getPortfolioList` function returns outdated owner information. The `PortfolioInfolList` is not updated to reflect the new owner. It's recommended to override the `transferOwnership` function to update the owner in `PortfolioInfolList`. This issue has been addressed and resolved.
 
 
   **Link**: [Issue #83](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77/issues/83)
@@ -183,7 +175,7 @@ Similar problems exist in several other events, including `TokenWhitelisted`, `T
 
 ## Conclusion
 
-The Velvet Capital Audit Competition on Hats.finance showcased a decentralized and competitive approach to enhancing security in web3 projects. By leveraging a large pool of skilled auditors, the competition aimed to identify and address vulnerabilities efficiently. Over two weeks, 113 submissions were made, with a total payout of $40,427.19 distributed among 16 participants. Among the identified issues, one high-severity vulnerability enabled token draining via improper validation in the DepositBatch contract. Medium-severity issues included potential transaction reversion due to unprotected ERC20 permits and inaccurate fee calculation due to parameter adjustments. Additionally, low-severity issues such as the inability to reset the watermark to zero and USDT approval issues were noted. Minor issues involved Solidity event indexing inaccuracies and potential overinflation in portfolio share minting. The audit competition successfully identified and resolved several critical vulnerabilities, reinforcing Hats.finance's commitment to fostering robust and secure DeFi protocols through decentralized audit solutions.
+In summary, the Hats.finance audit competition for Velvet Capital conducted over two weeks with a reward pool of nearly $70,000 succeeded in identifying 113 security vulnerabilities, with a total payout of $40,427.19 distributed among 16 participants. High-severity issues included a critical vulnerability in the DepositBatch function allowing malicious actors to drain token balances through improper calldata validation. Medium-severity issues ranged from unprotected ERC20 permit functionality enabling front-running attacks to improper handling of admin fee parameter changes that could result in incorrect fee minting. Low-severity issues highlighted flaws like failing USDT approvals and the potential for protocol rebalancing failures due to dust tokens. Minor issues included incorrect event emissions and outdated ownership data in portfolio lists. Overall, the competition demonstrated Hats.finance's model of enhancing DeFi security by leveraging decentralized and competitive auditing methods to identify and resolve critical issues swiftly.
 
 ## Disclaimer
 
