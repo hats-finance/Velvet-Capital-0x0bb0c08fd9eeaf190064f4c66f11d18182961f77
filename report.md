@@ -29,7 +29,7 @@ Intent Operating System streamlining portfolio management and make DeFi social
 
 ## Scope of Audit
 
-No scope available.
+[Velvet Capital Repo](https://github.com/hats-finance/Velvet-Capital-0x0bb0c08fd9eeaf190064f4c66f11d18182961f77)
 
 ## High severity issues
 
