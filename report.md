@@ -180,8 +180,7 @@ In summary, the Hats.finance audit competition for Velvet Capital conducted over
 ## Disclaimer
 
 
-This report does not assert that the audited contracts are completely secure. Continuous review and comprehensive testing are advised before deploying critical smart contracts.
-
+This report does not guarantee the absolute security of the audited contracts. Project teams are strongly advised to implement continuous monitoring and verify that deployed contracts match the audited versions. Users should exercise caution and, where possible, confirm contract integrity before interacting with critical smart contracts.
 
 The Velvet Capital audit competition illustrates the collaborative effort in identifying and rectifying potential vulnerabilities, enhancing the overall security and functionality of the platform.
 
